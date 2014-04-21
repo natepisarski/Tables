@@ -7,26 +7,31 @@
    Portability :   Portable (Standalone - ghc)
    Database client for the Quill2 database language. Use this, as Tables1 will be deprecated on June 1st, 2014.
 -}
-module Main(main) where
+module Main(main,dispatch) where
 
 import qualified Cookbook.Project.Quill.Quill2.Meta as Qm
 import qualified Cookbook.Essential.Meta as Cm
 
+import qualified Cookbook.Ingredients.Lists.Modify as Md
 import System.IO
 import System.Environment
 import System.Exit
 
+-- | Displayed from the "help" request in dispatch.
 allArgs = [("Add a Quill","add x to y as z | add x to y | add x as table | add x as list"),
            ("Remove a Quill","remove x from y | remove x"),
            ("Change a Quill","change x in y to z"),
            ("Get a quill", "get x from y | get x | list"),
            ("Combine Quills", "map x to y as z | combine x with y as z")]
+          
+-- | Dispatches the command line arguments.
 main = do
   arguments <- getArgs
   database  <- Qm.fromFile (head arguments)
   dispatch database (head arguments) arguments
   putStrLn "Done"
 
+-- | Wraps a Quill error in the database by exiting, preventing database corruption.
 qError :: Qm.QuillStatus a -> IO a
 qError x = case x of
   (Qm.QuillSuccess a)  -> return a -- FIXME make this handle the cases, not complain about them.
@@ -36,8 +41,8 @@ qError x = case x of
   (Qm.QuillMissing a)  -> do
     putStrLn (a ++ " Missing from file. Exiting. Fix manually.")
     exitFailure
-  
 
+-- | Handles the command-line arguments with destructuring.
 dispatch :: [Qm.Quill] -> String -> [String] -> IO ()
 dispatch database fName ("change":x:"in":y:"to":z:w) = do
   qu <- qError (Qm.getQuill database y)
@@ -113,7 +118,15 @@ dispatch database fName ("combine":x:"with":y:"as":w:z) = do
       (Qm.Table b) -> Qm.toFile fName ((w,Qm.Table (b ++ a)):database)
       (Qm.List b)  -> error "Error! Attempted to combine a table and list"
   dispatch database fName z
-      
+
+dispatch database fname ("file":y:z) = do
+  fl <- Cm.filelines y
+  mapM_ (dispatch database fname) (map (`Md.splitOn` ' ') fl)
+  dispatch database fname z
+
+dispatch database fname ("repl":_) = do
+  repl database fname
+  
 dispatch database fName ("help":y) = do
   mapM_ putStrLn (map ppTable allArgs)
   dispatch database fName y
@@ -124,10 +137,18 @@ dispatch fName db (x:xs) = do
   putStrLn ("Did not recognize command: "++x)
   dispatch fName db xs
 
+-- | Pretty print a table.
 ppTable :: (String, String) -> String
 ppTable (a,b) = Cm.flt [a," : ",b]
 
+-- | List the contents of a Quill.
 listOff :: Qm.Quill -> IO ()
 listOff x = case (snd x) of
   (Qm.Table _) -> putStrLn $ "Table " ++ (fst x)
   (Qm.List _)  -> putStrLn $ "List " ++ (fst x)
+
+-- | Evaluate Quill commands in an interactive Read-eval-print loop.
+repl fname dbase = do
+  inp <- Cm.prompt "$ "
+  dispatch fname dbase(Md.splitOn inp ' ')
+  repl fname dbase
