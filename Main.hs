@@ -14,35 +14,51 @@ import qualified Cookbook.Essential.Meta as Cm
 
 import System.IO
 import System.Environment
+import System.Exit
 
+allArgs = [("Add a Quill","add x to y as z | add x to y | add x as table | add x as list"),
+           ("Remove a Quill","remove x from y | remove x"),
+           ("Change a Quill","change x in y to z"),
+           ("Get a quill", "get x from y | get x | list"),
+           ("Combine Quills", "map x to y as z | combine x with y as z")]
 main = do
   arguments <- getArgs
   database  <- Qm.fromFile (head arguments)
   dispatch database (head arguments) arguments
   putStrLn "Done"
 
-qError :: Qm.QuillStatus a -> a
+qError :: Qm.QuillStatus a -> IO a
 qError x = case x of
-  (Qm.QuillSuccess a)  -> a -- FIXME make this handle the cases, not complain about them.
-  (Qm.QuillMultiple a) -> error   ("multiple " ++ a)
-  (Qm.QuillMissing a)  -> error ("missing "  ++ a)
+  (Qm.QuillSuccess a)  -> return a -- FIXME make this handle the cases, not complain about them.
+  (Qm.QuillMultiple a) -> do
+    putStrLn ("Multiple " ++ a ++ " exist in file. Exiting. Fix manually")
+    exitFailure
+  (Qm.QuillMissing a)  -> do
+    putStrLn (a ++ " Missing from file. Exiting. Fix manually.")
+    exitFailure
+  
 
 dispatch :: [Qm.Quill] -> String -> [String] -> IO ()
 dispatch database fName ("change":x:"in":y:"to":z:w) = do
-  let qu = qError (Qm.getQuill database y)
+  qu <- qError (Qm.getQuill database y)
   case (snd qu) of
-    (Qm.Table c) -> Qm.toFile fName (qError (Qm.changeItem database (Qm.ATable (y,x,z))))
+    (Qm.Table c) -> do
+      myDB <- (qError (Qm.changeItem database (Qm.ATable (y,x,z))))
+      Qm.toFile fName myDB
     (Qm.List c)  -> do
-      let mod = qError $ Qm.removeItem database (y,x) -- FIXME make QuillAddition work for lists.
-      Qm.toFile fName (qError (Qm.addItem mod (Qm.AList (y,z))))
+      mod <- qError $ Qm.removeItem database (y,x) -- FIXME make QuillAddition work for lists.
+      myDB <- (qError (Qm.addItem mod (Qm.AList (y,z))))
+      Qm.toFile fName myDB
   dispatch database fName w
 
 dispatch database fName ("add":x:"to":y:"as":z:w) = do
-  Qm.toFile fName (qError (Qm.addItem database (Qm.ATable (y,z,x))))
+  myDB <- (qError (Qm.addItem database (Qm.ATable (y,z,x))))
+  Qm.toFile fName myDB
   dispatch database fName w
 
 dispatch database fName ("add":x:"to":y:z) = do
-  Qm.toFile fName (qError (Qm.addItem database (Qm.AList (y,x))))
+  myDB <- (qError (Qm.addItem database (Qm.AList (y,x))))
+  Qm.toFile fName myDB
   dispatch database fName z
 
 dispatch database fName ("add":x:"as":y:w) = do
@@ -51,7 +67,8 @@ dispatch database fName ("add":x:"as":y:w) = do
   dispatch database fName w
   
 dispatch database fName ("remove":x:"from":y:z) = do
-  Qm.toFile fName $ qError (Qm.removeItem database (y,x))
+  myDB <- qError (Qm.removeItem database (y,x))
+  Qm.toFile fName $ myDB
   dispatch database fName z
 
 dispatch database fName ("remove":x:y) = do
@@ -59,11 +76,12 @@ dispatch database fName ("remove":x:y) = do
   dispatch database fName y
 
 dispatch database fName ("get":x:"from":y:z) = do
-  putStrLn $ qError $ Qm.lookUp database (y,x)
+  (qError $ Qm.lookUp database (y,x)) >>= putStrLn 
   dispatch database fName z
 
 dispatch database fName ("get":x:y) = do
-  case (snd (qError (Qm.getQuill database x))) of
+  myDB <- (qError (Qm.getQuill database x))
+  case (snd myDB) of
     (Qm.List a) -> mapM_ putStrLn (map ppTable [(show fi,se) | fi <- [0..length a], se <- a])
     (Qm.Table a) -> mapM_ putStrLn (map ppTable a)
   dispatch database fName y
@@ -73,8 +91,8 @@ dispatch database fName ("list":y) = do
 
 -- Composite functions
 dispatch database fName ("map":x:"to":y:"as":w:z) = do
-  let l1 = qError (Qm.getQuill database x)
-  let l2 = qError (Qm.getQuill database y)
+  l1 <- qError (Qm.getQuill database x)
+  l2 <- qError (Qm.getQuill database y)
   let l1list = case (snd l1) of
         (Qm.List a)  -> a
         (Qm.Table _) -> error "Error! Attempting to map table"
@@ -85,16 +103,20 @@ dispatch database fName ("map":x:"to":y:"as":w:z) = do
   dispatch database fName z
 
 dispatch database fName ("combine":x:"with":y:"as":w:z) = do
-  let l1 = qError (Qm.getQuill database x)
-  let l2 = qError (Qm.getQuill database y)
-  let l1list = case (snd l1) of
-        (Qm.List a)  -> a
-        (Qm.Table _) -> error "Error! Attempting to map table"
-  let l2list = case (snd l2) of
-        (Qm.List a)  -> a
-        (Qm.Table _) -> error "Error! Attempting to map table"
-  Qm.toFile fName ((w,Qm.List (l1list++l2list)):database)
+  l1 <- qError (Qm.getQuill database x)
+  l2 <- qError (Qm.getQuill database y)
+  case snd l1 of
+    (Qm.List a)  -> case (snd l2) of
+      (Qm.List b)  -> Qm.toFile fName ((w,Qm.List (b ++ a)):database)
+      (Qm.Table b) -> error "Error! Attempted to combine a table and list"
+    (Qm.Table a) -> case (snd l2) of
+      (Qm.Table b) -> Qm.toFile fName ((w,Qm.Table (b ++ a)):database)
+      (Qm.List b)  -> error "Error! Attempted to combine a table and list"
   dispatch database fName z
+      
+dispatch database fName ("help":y) = do
+  mapM_ putStrLn (map ppTable allArgs)
+  dispatch database fName y
   
 dispatch _ _ [] = return ()
 dispatch fName db ("and":xs) = dispatch fName db xs
