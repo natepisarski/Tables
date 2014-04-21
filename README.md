@@ -4,17 +4,29 @@ Tables is a command-line program for accessing Quill databases. It supports an E
 
 ## Argument rundown
 Tables [filename] get x from y
+
 Tables [filename] get x
+
 Tables [filename] add x as y
+
 Tables [filename] add x to y as z
+
 Tables [filename] remove x from y
+
 Tables [filename] remove x
+
 Tables [filename] change x in y to z
+
 Tables [filename] map x to y as z
+
 Tables [filename] combine x with y as z
+
 Tables [filename] file x
+
 Tables [filename] list
+
 Tables [filename] x and y and...
+
 Tables [filename] repl
 
 ## Table syntax
