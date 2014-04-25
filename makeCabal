@@ -1,0 +1,14 @@
+./clean
+emacs -nw *.cabal
+cabal configure
+cabal build
+rm ~/Bin/tb
+cp ./dist/build/Tables/Tables ~/Bin/tb
+cabal sdist
+cabal upload dist/Tables-*
+rm -rf dist/
+git add --all
+git add -u
+read cmessage
+git commit -m "$cmessage"
+git push -u origin master

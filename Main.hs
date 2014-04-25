@@ -28,7 +28,7 @@ allArgs = [("Add a Quill","add x to y as z | add x to y | add x as table | add x
 main = do
   arguments <- getArgs
   database  <- Qm.fromFile (head arguments)
-  dispatch database (head arguments) arguments
+  dispatch database (head arguments) (tail arguments)
   putStrLn "Done"
 
 -- | Wraps a Quill error in the database by exiting, preventing database corruption.
