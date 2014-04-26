@@ -121,11 +121,12 @@ dispatch database fName ("combine":x:"with":y:"as":w:z) = do
 
 dispatch database fname ("file":y:z) = do
   fl <- Cm.filelines y
-  mapM_ (dispatch database fname) (map (`Md.splitOn` ' ') fl)
+  cDispatch database fname (map (`Md.splitOn` ' ') fl)
   dispatch database fname z
 
+  
 dispatch database fname ("repl":_) = do
-  repl database fname
+  repl fname database
   
 dispatch database fName ("help":y) = do
   mapM_ putStrLn (map ppTable allArgs)
@@ -137,6 +138,12 @@ dispatch fName db (x:xs) = do
   putStrLn ("Did not recognize command: "++x)
   dispatch fName db xs
 
+cDispatch _ _ [] = return ()
+cDispatch db fname (x:y) = do
+  dispatch db fname x
+  nDB <- Qm.fromFile fname
+  cDispatch nDB fname y
+  
 -- | Pretty print a table.
 ppTable :: (String, String) -> String
 ppTable (a,b) = Cm.flt [a," : ",b]
@@ -148,7 +155,9 @@ listOff x = case (snd x) of
   (Qm.List _)  -> putStrLn $ "List " ++ (fst x)
 
 -- | Evaluate Quill commands in an interactive Read-eval-print loop.
+repl :: String -> [Qm.Quill] -> IO ()
 repl fname dbase = do
   inp <- Cm.prompt "$ "
-  dispatch fname dbase(Md.splitOn inp ' ')
-  repl fname dbase
+  dispatch dbase fname (Md.splitOn inp ' ')
+  x <- Qm.fromFile fname
+  repl fname x
